@@ -1,0 +1,46 @@
+name: Docker Image Test
+
+on:
+  push:
+    branches:
+      - latest
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v2
+
+    - name: Build Docker Image
+      run: |
+        docker build \
+          -t my-docker-image \
+          --build-arg PGHOST=localhost \
+          --build-arg PGPORT=5432 \
+          --build-arg PGUSER=$(node -p "JSON.parse(require('fs').readFileSync('package.json')).name") \
+          --build-arg PGPASSWORD=$(node -p "JSON.parse(require('fs').readFileSync('package.json')).name") \
+          --build-arg PGDATABASE=$(node -p "JSON.parse(require('fs').readFileSync('package.json')).name.split('/').shift()") \
+          --build-arg PGSCHEMA=$(node -p "JSON.parse(require('fs').readFileSync('package.json')).name.split('/').pop()") \
+          .
+
+    - name: Start Docker Container
+      run: docker run --name my-container my-docker-image > container_output.txt 2>&1
+
+    - name: Check Exit Status
+      id: check_exit_status
+      run: echo "exit_code=$(docker wait my-container)" >> $GITHUB_OUTPUT
+
+    - name: Show Container Output
+      run: cat container_output.txt
+
+    - name: Cleanup Docker Container
+      run: docker rm my-container
+
+    - name: Check Exit Code
+      run: |
+        echo "Exit Code: ${{ steps.check_exit_status.outputs.exit_code }}"
+        if [[ ${{ steps.check_exit_status.outputs.exit_code }} != 0 ]]; then
+          exit 1
+        fi

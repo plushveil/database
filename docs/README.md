@@ -2,13 +2,20 @@
 
 > A simple database wrapper for PostgreSQL.
 
+This package provides a simple and flexible way to interact with a PostgreSQL database in Node.js applications, featuring automatic versioned migrations and support for node procedures.
+
+
+
+## Table of Contents
+
 - [Prerequisites](#prerequisites)
 - [Setting up the Database](#setting-up-the-database)
 - [Environment Variables](#environment-variables)
 - [Installation](#installation)
 - [Getting Started](#getting-started)
+  - [Running Queries](#running-queries)
   - [Versioning queries](#versioning-queries)
-  - [Procedures](#procedures)
+  - [Stored Procedures](#stored-procedures)
 
 
 
@@ -21,22 +28,24 @@
 
 ## Setting up the Database
 
-To create an application user and a database you need a superuser. You should have created a superuser during the installation of PostgreSQL.
+You’ll need a PostgreSQL superuser to create the necessary application users and databases. If you've installed PostgreSQL, you likely already created a superuser. The default user is usually `postgres`.
 
 | Name              | Description               | Example Value      |
 | ----------------- | ------------------------- |------------------- |
-| `PGUSER`          | The superusers user name. | `admin`            |
-| `PGPASSWORD`      | The superusers password.  | `admin`            |
+| `PGUSER`          | The superusers user name. | `postgres`         |
+| `PGPASSWORD`      | The superusers password.  | `postgres`         |
 
-If you have not created a superuser, you can do so by assuming the role of the postgres user and then running the createuser command:
+If you haven't created a superuser, you can create one by running the following commands as the `postgres` user:
 
 ```bash
 sudo -u postgres createuser --superuser \"$PGUSER\"
 sudo -u postgres psql -c "ALTER USER \"${PGUSER}\" WITH PASSWORD '${PGPASSWORD}';"
 ```
 
-That superuser can now create a new application user and a database.
-The template literals `${PGUSER}` and `${PGDATABASE}` should be replaced with the desired values.
+
+### Creating the Application User and Database
+
+Once your superuser is configured, you can create an application user and a database:
 
 ```bash
 psql -c "CREATE USER \"${PGUSER}\";"
@@ -44,11 +53,12 @@ psql -c "CREATE DATABASE \"${PGDATABASE}\";"
 psql -c "GRANT ALL PRIVILEGES ON DATABASE \"${PGDATABASE}\" TO \"${PGUSER}\";"
 ```
 
+Replace the placeholders `${PGUSER}` and `${PGDATABASE}` with your desired values.
 
 
 ## Environment Variables
 
-The code samples in this document assume that the following environment variables are set:
+The package relies on environment variables to connect to your PostgreSQL database. Ensure the following variables are properly set:
 
 | Name         | Description                        | Example           |
 | ------------ | ---------------------------------- | ----------------- |
@@ -63,7 +73,7 @@ The code samples in this document assume that the following environment variable
 
 ## Installation
 
-This package available in the NPM registry can be installed using the following command:
+To install the package, use npm:
 
 ```bash
 npm install @plushveil/database
@@ -72,38 +82,45 @@ npm install @plushveil/database
 
 ## Getting Started
 
-Importing the package will automatically connect to the database using the [environment variables](#environment-variables).
+Once installed, importing the package automatically connects to the database using the [environment variables](#environment-variables) you set up earlier.
 
 ```js
 import pool from '@plushveil/database'
 ```
 
-The database will be set up by running all `.psql` files in the `./database` directory (not recursive).
+The database setup will run all `.pgsql` files in the `./database` directory (not recursive).
 
-If you want the app to exit `pool.end()` needs to be called, otherwise the connection will be kept alive.
 
-```js
-import pool from '@plushveil/database'
-pool.end()
-```
+### Running Queries
 
-To run a query, you need to get a connection from the pool and then release it after the connection is no longer needed.
+You can execute queries by obtaining a connection from the pool. Make sure to release the connection once you're done:
 
 ```js
 const db = await pool.connect()
-console.log(await db.query('SELECT NOW()'))
+const result = await db.query('SELECT NOW()')
+console.log(result.rows)
 db.release()
+```
+
+Note: To gracefully close the connection pool and allow the app to exit, call pool.end().
+
+```js
+pool.end()
 ```
 
 
 ### Versioning queries
 
-Queries in the `./database` directory can be prefixed with the `/** @version ${version} */` DOC comment.
-This allows the package to only run the queries that have not been run yet.
+This package supports query versioning to automatically handle database migrations.
+Queries stored in the `./database` directory can be prefixed with a special `@version` comment:
 
-Please take a look at [./database/info.sql](../database/info.sql) for an advanced usage example.
+```sql
+/** @version 1.0.0 */
+CREATE TABLE users (id SERIAL PRIMARY KEY, name VARCHAR(100));
+```
 
-This makes it possible to run the database setup at application startup and only run the queries that have not been run yet.
+When the database is set up, the package will only run queries that have not been run yet.
+
 
 | Package Version | Database Version | `@version` annotation | Execute Query      | Throws Error       |
 | --------------- | ---------------- | --------------------- | ------------------ | ------------------ |
@@ -118,17 +135,20 @@ This makes it possible to run the database setup at application startup and only
 | `0.0.3-feat`    |                  | `0.0.3-feat`          | :heavy_check_mark: | :x:                |
 | `0.0.3-feat`    | `0.0.3-feat`     | `0.0.3-feat`          | :x:                | :x:                |
 
+For more advanced usage, see the [./database/info.pgsql](../database/info.pgsql) file.
 
-### Procedures
 
-Procedures are stored in the [./database/procedures](../database/procedures) directory (not recursive).
-When the database is set up, all queries in this directory will be available as functions in the `procedures` property.
+### Stored Procedures
+
+Procedures are placed in the [./database/procedures](../database/procedures) directory.
+When the database is initialized, these procedures become accessible as functions through the `procedures` property on the database connection.
 
 ```js
-import pool from '@plushveil/database'
 const db = await pool.connect()
-
-// this will call the default function of database/procedures/get_user_by_id.mjs
-// available extensions are .mjs, .js, .sql, .psql, .pgsql
-db.procedures.get_user_by_id(1)
+await db.procedures.get_user_by_id(1)  // calls database/procedures/get_user_by_id.mjs
+db.release()
 ```
+
+> Supported Extensions: .mjs, .js, .sql, .psql, .pgsql
+
+Stored procedures allow you to organize complex database logic into reusable functions that can be called easily from your application code.
